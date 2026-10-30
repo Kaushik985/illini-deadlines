@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Illini Deadlines</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Deadlines">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#13294b">
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1d2433;--mute:#6b7280;--line:#e5e7eb;--red:#c2410c;--blue:#13294b;--or:#e84a27}
+*{box-sizing:border-box}body{margin:0;font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+main{max-width:760px;margin:0 auto;padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+h1{font-size:22px;margin:0;color:var(--blue)}#now{color:var(--mute);font-size:13px}
+#chips{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
+.chip{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:5px 12px;cursor:pointer;font:inherit;font-size:13px}
+.chip.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+label.tog{font-size:13px;color:var(--mute);cursor:pointer}
+section{margin-top:18px}h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);margin:0 0 6px}
+h2 span{font-weight:400}
+.row{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:6px}
+.row input{margin-top:3px;width:18px;height:18px;flex:none}
+.body{flex:1;min-width:0}.t{font-weight:600;color:var(--ink);text-decoration:none;word-wrap:break-word}.t:hover{text-decoration:underline}
+.meta{font-size:12.5px;color:var(--mute);margin-top:2px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.badge{font-size:11.5px;font-weight:700;background:#eef2ff;color:var(--blue);border-radius:6px;padding:1px 6px;white-space:nowrap}
+.tag{font-size:11px;border:1px solid var(--line);border-radius:5px;padding:0 5px}.est{border-color:#f59e0b;color:#b45309}
+.rel{font-weight:600;color:var(--ink)}.late .rel{color:var(--red)}
+.done .t{text-decoration:line-through;color:var(--mute)}.done{opacity:.6}
+.note{font-size:12px;color:var(--mute);margin-top:3px}
+details summary{cursor:pointer;color:var(--mute);font-size:13px}
+#exams .row{border-left:4px solid var(--or)}#overdue .row{border-left:4px solid var(--red)}
+</style></head><body><main>
+<header><h1>Deadlines</h1><span id="now"></span></header>
+<div id="chips"></div>
+<div id="upd" class="note"></div>
+<label class="tog"><input type="checkbox" id="showDone"> Show done</label>
+<div id="list"></div>
+</main>
+<script src="data.js"></script>
+<script>
+const TZ = 'America/Chicago', DAY = 864e5, KEY = 'deadlines-done';
+const q = new URLSearchParams(location.search);
+const NOW = q.get('now') ? new Date(q.get('now')) : new Date();
+const items = (window.DEADLINES || []).slice().sort((a, b) => new Date(a.due) - new Date(b.due));
+let done = {}; try { done = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
+const isDone = it => it.id in done ? done[it.id] : it.status === 'done';
+let course = 'All', showDone = false;
+const dayKey = d => d.toLocaleDateString('en-CA', {timeZone: TZ});
+const fmt = d => d.toLocaleString('en-US', {timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'}) + ' CT';
+function rel(d) {
+  const ms = d - NOW, a = Math.abs(ms), h = a / 36e5;
+  const s = h < 1 ? Math.round(a / 6e4) + 'm' : h < 48 ? Math.round(h) + 'h' : Math.round(h / 24) + 'd';
+  return ms >= 0 ? 'in ' + s : s + ' late';
+}
+const est = it => it.source === 'syllabus' ||
+  (/inferred|syllabus-only|time assumed|placeholder|uncertain/i.test(it.notes || '') && !/Confirmed by Illini Dash/.test(it.notes || ''));
+function section(it) {
+  const d = new Date(it.due);
+  if (it.type === 'exam' && d >= NOW) return 'exams';
+  if (d < NOW) return NOW - d <= 14 * DAY ? 'overdue' : 'past';
+  if (dayKey(d) === dayKey(NOW)) return 'today';
+  return d - NOW <= 7 * DAY ? 'week' : 'later';
+}
+const SECTIONS = [['exams', 'Exams'], ['overdue', 'Overdue'], ['today', 'Today'], ['week', 'This week'], ['later', 'Later'], ['past', 'Older than 2 weeks']];
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+function row(it) {
+  const d = new Date(it.due), dn = isDone(it), late = d < NOW && !dn;
+  const title = it.url ? `<a class="t" href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.title)}</a>` : `<span class="t">${esc(it.title)}</span>`;
+  return `<div class="row${dn ? ' done' : ''}${late ? ' late' : ''}" data-id="${esc(it.id)}">
+    <input type="checkbox" ${dn ? 'checked' : ''} aria-label="done">
+    <div class="body">${title}
+      <div class="meta"><span class="badge">${esc(it.course)}</span><span>${fmt(d)}</span><span class="rel">${rel(d)}</span>
+        <span class="tag">${esc(it.source)}</span>${est(it) ? '<span class="tag est">est.</span>' : ''}</div>
+      ${it.notes ? `<div class="note">${esc(it.notes)}</div>` : ''}</div></div>`;
+}
+function render() {
+  if (window.DEADLINES_UPDATED) document.getElementById('upd').textContent = 'Updated ' + fmt(new Date(window.DEADLINES_UPDATED));
+  document.getElementById('now').textContent = 'Now: ' + fmt(NOW);
+  const courses = ['All', ...new Set(items.map(i => i.course))].sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : a.localeCompare(b));
+  document.getElementById('chips').innerHTML = courses.map(c => `<button class="chip${c === course ? ' on' : ''}" data-c="${esc(c)}">${esc(c)}</button>`).join('');
+  const groups = {};
+  for (const it of items) {
+    if ((course !== 'All' && it.course !== course) || (!showDone && isDone(it))) continue;
+    (groups[section(it)] ||= []).push(it);
+  }
+  document.getElementById('list').innerHTML = SECTIONS.filter(([k]) => groups[k]).map(([k, name]) => {
+    const inner = `<h2>${name} <span>(${groups[k].length})</span></h2>${groups[k].map(row).join('')}`;
+    return k === 'past' ? `<section id="${k}"><details><summary>${name} (${groups[k].length})</summary>${groups[k].map(row).join('')}</details></section>`
+                        : `<section id="${k}">${inner}</section>`;
+  }).join('') || '<p>Nothing due. 🎉</p>';
+}
+document.getElementById('chips').onclick = e => { if (e.target.dataset.c) { course = e.target.dataset.c; render(); } };
+document.getElementById('showDone').onchange = e => { showDone = e.target.checked; render(); };
+document.getElementById('list').onchange = e => {
+  const id = e.target.closest('.row').dataset.id; done[id] = e.target.checked;
+  try { localStorage.setItem(KEY, JSON.stringify(done)); } catch (err) {}
+  render();
+};
+render();
+if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').then(() => console.log('sw registered'), e => console.error('sw failed', e));
+</script></body></html>
